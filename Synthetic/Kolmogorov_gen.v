@@ -272,7 +272,14 @@ Variable Θ : nat ↛ nat.
 
 Definition C := the_least (fun x s => exists c, s = |c| /\ Θ c ▷ x).
 
-Variable C_weakly_total : forall x, ~~ exists y, C x y.
+Variable Θ_total : forall x, exists y, Θ y ▷ x.
+
+Lemma C_weakly_total :
+  forall x,~~ exists y, C x y.
+Proof.
+  intros x. destruct (Θ_total x) as [y Hy].
+  eapply the_least_ex. eauto.
+Qed.
 
 Definition N (x : nat) :=
   exists y, Θ y ▷ x /\ |y| < |x|.
@@ -288,7 +295,7 @@ Proof.
     firstorder.
   - intros (y & H1 & H2) y' ((c & -> & ?) & ?).
     eapply le_lt_trans with (m := |y|); eauto.
-  - firstorder.
+  - firstorder using C_weakly_total.
 Qed.
 
 Definition R (x : nat) :=
@@ -304,7 +311,7 @@ Proof.
   - intros (y & ((c & -> & H2) & H3) & H4) y' H.
     red. transitivity (|c|); eauto.
   - intros H1 y ((c & -> & H2) & H3). firstorder.
-  - firstorder.
+  - firstorder using C_weakly_total.
 Qed.
 
 Lemma R_neg_N x :
@@ -680,6 +687,28 @@ Axiom ϕ : nat -> nat ↛ nat.
 Axiom EPF : forall f : nat -> nat ↛ nat,
     exists γ, forall i, ϕ (γ i) ≡{_} f i.
 
+Theorem Invariance Θ :
+  (forall f, exists d, forall x, forall v_x, f x ▷ v_x -> exists y_x, Θ y_x ▷ v_x /\ | y_x| < |x| + d) ->
+  forall Θ', exists d, forall x y, C Θ x y -> forall y', C Θ' x y' -> y < y' + d.
+Proof.
+  intros Hopt Θ'.
+  destruct (Hopt Θ') as [d Hd].
+  exists d.
+  intros x ? ((y & -> & H) & Hleast) _ ((y' & -> & H2) & Hleast2).
+  eapply Hd in H2 as [v_x [H1 H2]].
+  eapply Nat.le_lt_trans with (2 := H2), Hleast. eauto.
+Qed.
+
+Theorem bla Θ :
+  (forall f, exists d, forall x, forall v_x, f x ▷ v_x -> exists y_x, Θ y_x ▷ v_x /\ | y_x| < |x| + d) ->
+  forall x, exists y, Θ y ▷ x.
+Proof.
+  intros Hopt x.
+  destruct (Hopt (@ret _ nat)) as [d Hd].
+  specialize (Hd x x (ret_hasvalue x)) as [y [H1 _]].
+  eauto.
+Qed.
+
 Module universal.
 
   Definition C_ u := the_least (fun x s => exists y, s = |y| /\ ϕ u y ▷ x).
@@ -718,10 +747,10 @@ Module universal.
     rewrite <- Hc, H. eapply ret_hasvalue.
   Qed.
 
-  Lemma C_weakly_total u x :
-    universal u -> ~~ exists y, C_ u x y.
+  Lemma Θ_total u :
+    universal u -> forall x, exists y, ϕ u y ▷ x.
   Proof.
-    intros Hu. eapply the_least_ex.
+    intros Hu x. 
     destruct (EPF_univ_tot Hu (fun _ => x)) as [c Hc % fun H => H 0].
     eauto.
   Qed.
@@ -738,15 +767,14 @@ Module universal.
     simple N.
   Proof.
     eapply simple_N_strong.
-    - intros x. eapply (C_weakly_total u x univ_u).
-    - intros f.
-      specialize (EPF (fun _ => f)) as [γ H].
-      destruct (univ_u (γ 0)) as [c Hc].
-      exists (|c| + 1). intros x.
-      exists (⟨ c, x ⟩). intros v_x Hvx.
-      split.
-      + eapply Hc, H, Hvx.
-      + autorewrite with length. lia.
+    intros f.
+    specialize (EPF (fun _ => f)) as [γ H].
+    destruct (univ_u (γ 0)) as [c Hc].
+    exists (|c| + 1). intros x.
+    exists (⟨ c, x ⟩). intros v_x Hvx.
+    split.
+    + eapply Hc, H, Hvx.
+    + autorewrite with length. lia.
   Qed.
 
   End fix_u.
@@ -809,9 +837,6 @@ Module universal.
       now autorewrite with length.
     Qed.
 
-    (* Variable info : nat -> nat. *)
-    (* Variable info_spec : forall x y, invert ⟨⟨info x, x⟩, y⟩ = (x, y). *)
-
     Lemma universal_ex :
       exists u, universal u.
     Proof.
@@ -862,13 +887,11 @@ Module fixed_input.
 
   Definition C := the_least (fun x s => exists c, s = |c| /\ ϕ c input ▷ x).
 
-  Lemma C_weakly_total x :
-    ~~ exists y, C x y.
+  Lemma Θ_total x :
+    exists c, ϕ c input ▷ x.
   Proof.
-    eapply the_least_ex.
     destruct (EPF (fun _ _ => ret x)) as [γ H].
-    eexists. exists (γ 0). split; try reflexivity.
-    eapply H, ret_hasvalue.
+    exists (γ 0). eapply H, ret_hasvalue.
   Qed.
 
   Definition N (x : nat) :=
@@ -880,10 +903,9 @@ Module fixed_input.
   Lemma simple_N : simple N.
   Proof.
     eapply simple_N_strong.
-    - eapply C_weakly_total.
-    - intros f.
-      destruct (dist_part f) as (γ & d & H). exists d.
-      intros x. exists (γ x). firstorder.
+    intros f.
+    destruct (dist_part f) as (γ & d & H). exists d.
+    intros x. exists (γ x). firstorder.
   Qed.
 
 End fixed_input.
